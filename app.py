@@ -2,16 +2,18 @@ from flask import Flask, render_template, request, redirect, session, url_for
 from flask_login import LoginManager, current_user, login_required, login_user, logout_user
 from model.users import Users
 from model.users import db
+import os 
 
 from form import RegisterForm
 
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "your_secret_key_here"
-app.config["SQLALCHEMY_DATABASE_URI"] = (
-    "postgresql://postgres:Nopassword%4003@localhost/test"
-)
+db_url = os.environ.get("DATABASE_URL") or "sqlite:///users.db"
 
+if db_url and db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 loginmanager = LoginManager()
 loginmanager.init_app(app)
 loginmanager.login_view = "login"
@@ -26,6 +28,13 @@ db.init_app(app)
 
 with app.app_context():
     db.create_all()
+
+
+@app.route("/")
+def home():
+    if current_user.is_authenticated:
+        return redirect(url_for("dashboard", user_id=current_user.id))
+    return redirect(url_for("register"))
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -49,16 +58,18 @@ def register():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    username = request.form.get("username")
-    user = Users.query.filter_by(username=username).first()
-    if user and user.check_password(request.form.get("password")):
-        login_user(user)
-        print(user.id)
-        return redirect(url_for("dashboard", user_id=user.id))
-    return render_template("login.html", error="Invalid credentials")
+    if request.method == "POST":
+        username = request.form.get("username")
+        user = Users.query.filter_by(username=username).first()
+        if user and user.check_password(request.form.get("password")):
+            login_user(user)
+            return redirect(url_for("dashboard", user_id=user.id))
+        return render_template("login.html", error="Invalid credentials")
+
+    return render_template("login.html")
 
 
-@app.route("/dashboard<int:user_id>")
+@app.route("/dashboard/<int:user_id>")
 @login_required
 def dashboard(user_id):
     return render_template("dashboard.html", user_id=user_id, current_user=current_user.username)
